@@ -80,4 +80,6 @@ def handle_message(message):
 
 if __name__ == "__main__":
     print("Бот запущен...")
+    # Удаляем webhook, чтобы избежать конфликта с polling
+    bot.delete_webhook()
     bot.infinity_polling()
