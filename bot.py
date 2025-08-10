@@ -1,40 +1,100 @@
 import os
+import psycopg2
 from flask import Flask, request
 import telebot
 import g4f
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://your-service.onrender.com
+WEBHOOK_URL_PATH = f"/{TOKEN}/"
+DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL для Render
+
 if not TOKEN:
     raise ValueError("Не найден TELEGRAM_TOKEN в переменных окружения")
-
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://your-service.onrender.com
 if not WEBHOOK_URL_BASE:
     raise ValueError("Не найден WEBHOOK_URL_BASE в переменных окружения")
-
-WEBHOOK_URL_PATH = f"/{TOKEN}/"
+if not DATABASE_URL:
+    raise ValueError("Не найден DATABASE_URL в переменных окружения")
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 MAX_HISTORY_LENGTH = 20
-user_histories = {}
+AVAILABLE_MODELS = ["gpt-3.5-turbo", "gpt-4", "gpt-4o"]
+DEFAULT_MODEL = "gpt-4"
+user_models = {}  # chat_id -> model
+
+# --- Работа с PostgreSQL ---
+def get_db_conn():
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
+
+def init_db():
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS history (
+                    chat_id BIGINT,
+                    role TEXT,
+                    content TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            conn.commit()
 
 def get_history(chat_id):
-    return user_histories.get(chat_id, [])
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT role, content FROM history
+                WHERE chat_id = %s
+                ORDER BY timestamp ASC
+                LIMIT %s
+            """, (chat_id, MAX_HISTORY_LENGTH))
+            rows = cur.fetchall()
+    return [{"role": row[0], "content": row[1]} for row in rows]
 
 def append_history(chat_id, role, content):
-    history = user_histories.get(chat_id, [])
-    history.append({"role": role, "content": content})
-    if len(history) > MAX_HISTORY_LENGTH:
-        history = history[-MAX_HISTORY_LENGTH:]
-    user_histories[chat_id] = history
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO history (chat_id, role, content)
+                VALUES (%s, %s, %s)
+            """, (chat_id, role, content))
+            conn.commit()
+
+def reset_history(chat_id):
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM history WHERE chat_id = %s", (chat_id,))
+            conn.commit()
+
+def get_stats(chat_id):
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM history WHERE chat_id = %s", (chat_id,))
+            count = cur.fetchone()[0]
+    return count
+
+init_db()
+
+def get_user_model(chat_id):
+    return user_models.get(chat_id, DEFAULT_MODEL)
+
+def set_user_model(chat_id, model):
+    if model in AVAILABLE_MODELS:
+        user_models[chat_id] = model
+        return True
+    return False
+
+# --- Команды бота ---
 
 @bot.message_handler(commands=['start'])
 def start(message):
     chat_id = message.chat.id
-    user_histories[chat_id] = []
+    reset_history(chat_id)
+    user_models[chat_id] = DEFAULT_MODEL
     bot.send_message(chat_id, "Привет! Я бот на базе GPT-4. Просто напиши мне что-нибудь и я тебе отвечу.\n"
-                    "Также советую посмотреть все комманды: /help")
+                              "Также советую посмотреть все комманды: /help")
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
@@ -45,14 +105,16 @@ def help_cmd(message):
         "/help - показать список команд\n"
         "/reset - сбросить историю\n"
         "/info - информация о боте\n"
-        "/price - Цена (бесплатно)"
+        "/price - Цена (бесплатно)\n"
+        "/stats - статистика сообщений\n"
+        "/model <имя> - выбрать модель (gpt-3.5-turbo, gpt-4, gpt-4o)"
     )
     bot.send_message(chat_id, help_text)
 
 @bot.message_handler(commands=['reset'])
 def reset(message):
     chat_id = message.chat.id
-    user_histories[chat_id] = []
+    reset_history(chat_id)
     bot.send_message(chat_id, "История диалога была успешно сброшена.")
 
 @bot.message_handler(commands=['info'])
@@ -67,12 +129,33 @@ def info(message):
     bot.send_message(chat_id, info_text)
 
 @bot.message_handler(commands=['price'])
-def help_cmd(message):
+def price_cmd(message):
     chat_id = message.chat.id
     price_text = (
         "!!!FREE - БЕСПЛАТНО!!!"
     )
     bot.send_message(chat_id, price_text)
+
+@bot.message_handler(commands=['stats'])
+def stats(message):
+    chat_id = message.chat.id
+    count = get_stats(chat_id)
+    bot.send_message(chat_id, f"Всего сообщений в истории: {count}")
+
+@bot.message_handler(commands=['model'])
+def model_cmd(message):
+    chat_id = message.chat.id
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.send_message(chat_id, f"Укажите модель. Доступные: {', '.join(AVAILABLE_MODELS)}")
+        return
+    model_name = parts[1].strip()
+    if set_user_model(chat_id, model_name):
+        bot.send_message(chat_id, f"Модель успешно изменена на {model_name}")
+    else:
+        bot.send_message(chat_id, f"Модель {model_name} недоступна. Доступные: {', '.join(AVAILABLE_MODELS)}")
+
+# --- Обработка сообщений с индикатором "печатает" ---
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
@@ -80,10 +163,12 @@ def handle_message(message):
     text = message.text
 
     append_history(chat_id, "user", text)
+    bot.send_chat_action(chat_id, 'typing')  # Показываем "печатает"
 
+    model = get_user_model(chat_id)
     try:
         response = g4f.ChatCompletion.create(
-            model="gpt-4",
+            model=model,
             messages=get_history(chat_id)
         )
     except Exception as e:
@@ -92,6 +177,8 @@ def handle_message(message):
 
     append_history(chat_id, "assistant", response)
     bot.send_message(chat_id, response)
+
+# --- Webhook endpoint ---
 
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
@@ -103,6 +190,5 @@ def webhook():
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
-
     port = int(os.environ.get('PORT', 5000))
     app.run(host="0.0.0.0", port=port)
