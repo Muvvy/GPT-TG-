@@ -20,9 +20,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 MAX_HISTORY_LENGTH = 20
-AVAILABLE_MODELS = ["gpt-3.5-turbo", "gpt-4", "gpt-4o"]
 DEFAULT_MODEL = "gpt-4"
-user_models = {}  # chat_id -> model
 
 # --- Работа с PostgreSQL ---
 def get_db_conn():
@@ -77,22 +75,12 @@ def get_stats(chat_id):
 
 init_db()
 
-def get_user_model(chat_id):
-    return user_models.get(chat_id, DEFAULT_MODEL)
-
-def set_user_model(chat_id, model):
-    if model in AVAILABLE_MODELS:
-        user_models[chat_id] = model
-        return True
-    return False
-
 # --- Команды бота ---
 
 @bot.message_handler(commands=['start'])
 def start(message):
     chat_id = message.chat.id
     reset_history(chat_id)
-    user_models[chat_id] = DEFAULT_MODEL
     bot.send_message(chat_id, "Привет! Я бот на базе GPT-4. Просто напиши мне что-нибудь и я тебе отвечу.\n"
                               "Также советую посмотреть все комманды: /help")
 
@@ -106,8 +94,7 @@ def help_cmd(message):
         "/reset - сбросить историю\n"
         "/info - информация о боте\n"
         "/price - Цена (бесплатно)\n"
-        "/stats - статистика сообщений\n"
-        "/model <имя> - выбрать модель (gpt-3.5-turbo, gpt-4, gpt-4o)"
+        "/stats - статистика сообщений"
     )
     bot.send_message(chat_id, help_text)
 
@@ -124,16 +111,14 @@ def info(message):
         "Я бот на базе GPT.\n"
         "Могу поддерживать диалог и запоминать историю сообщений.\n"
         "Я абсолютно бесплатный. Иногда могу ошибаться (всё-таки я же ИИ).\n"
-        "Если ты хочешь поддержать этот проект, или ты хочешь предложить какую-то идею, то обращайся к моему хозяину: @seregannj! "
+        "Если ты хочешь поддержать этот проект, или хочешь предложить идею, обращайся к моему хозяину: @seregannj!"
     )
     bot.send_message(chat_id, info_text)
 
 @bot.message_handler(commands=['price'])
 def price_cmd(message):
     chat_id = message.chat.id
-    price_text = (
-        "!!!FREE - БЕСПЛАТНО!!!"
-    )
+    price_text = "!!!FREE - БЕСПЛАТНО!!!"
     bot.send_message(chat_id, price_text)
 
 @bot.message_handler(commands=['stats'])
@@ -141,19 +126,6 @@ def stats(message):
     chat_id = message.chat.id
     count = get_stats(chat_id)
     bot.send_message(chat_id, f"Всего сообщений в истории: {count}")
-
-@bot.message_handler(commands=['model'])
-def model_cmd(message):
-    chat_id = message.chat.id
-    parts = message.text.split()
-    if len(parts) < 2:
-        bot.send_message(chat_id, f"Укажите модель. Доступные: {', '.join(AVAILABLE_MODELS)}")
-        return
-    model_name = parts[1].strip()
-    if set_user_model(chat_id, model_name):
-        bot.send_message(chat_id, f"Модель успешно изменена на {model_name}")
-    else:
-        bot.send_message(chat_id, f"Модель {model_name} недоступна. Доступные: {', '.join(AVAILABLE_MODELS)}")
 
 # --- Обработка сообщений с индикатором "печатает" ---
 
@@ -165,10 +137,9 @@ def handle_message(message):
     append_history(chat_id, "user", text)
     bot.send_chat_action(chat_id, 'typing')  # Показываем "печатает"
 
-    model = get_user_model(chat_id)
     try:
         response = g4f.ChatCompletion.create(
-            model=model,
+            model=DEFAULT_MODEL,
             messages=get_history(chat_id)
         )
     except Exception as e:
