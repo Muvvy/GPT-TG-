@@ -33,7 +33,8 @@ def append_history(chat_id, role, content):
 def start(message):
     chat_id = message.chat.id
     user_histories[chat_id] = []
-    bot.send_message(chat_id, "Привет! Я бот на базе GPT-4 через g4f. Просто напиши мне что-нибудь.")
+    bot.send_message(chat_id, "Привет! Я бот на базе GPT-4. Просто напиши мне что-нибудь и я тебе отвечу.\n"
+                    "Также советую посмотреть все комманды: /help")
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
@@ -43,7 +44,8 @@ def help_cmd(message):
         "/start - начать диалог\n"
         "/help - показать список команд\n"
         "/reset - сбросить историю\n"
-        "/info - информация о боте"
+        "/info - информация о боте\n"
+        "/price - Цена (бесплатно)"
     )
     bot.send_message(chat_id, help_text)
 
@@ -57,10 +59,20 @@ def reset(message):
 def info(message):
     chat_id = message.chat.id
     info_text = (
-        "Я бот на базе GPT-4 через библиотеку g4f.\n"
-        "Могу поддерживать диалог и запоминать историю сообщений."
+        "Я бот на базе GPT.\n"
+        "Могу поддерживать диалог и запоминать историю сообщений.\n"
+        "Я абсолютно бесплатный. Иногда могу ошибаться (всё-таки я же ИИ).\n"
+        "Если ты хочешь поддержать этот проект, или ты хочешь предложить какую-то идею, то обращайся к моему хозяину: @seregannj! "
     )
     bot.send_message(chat_id, info_text)
+
+@bot.message_handler(commands=['price'])
+def help_cmd(message):
+    chat_id = message.chat.id
+    price_text = (
+        "!!!FREE - БЕСПЛАТНО!!!"
+    )
+    bot.send_message(chat_id, price_text)
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
