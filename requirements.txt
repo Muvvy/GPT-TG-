@@ -2,3 +2,4 @@ pyTelegramBotAPI
 g4f
 typing_extensions
 Flask
+psycopg2
