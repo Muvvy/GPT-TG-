@@ -75,7 +75,7 @@ def get_stats(chat_id):
 
 init_db()
 
-# --- CORS для Web App (например, GitHub Pages) ---
+# --- CORS для Web App ---
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "https://muvvy.github.io"
@@ -83,14 +83,14 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
-# --- Endpoint для Telegram Web App (frontend) ---
+# --- Endpoint для Telegram Web App ---
 @app.route("/api/ai", methods=["POST", "OPTIONS"])
 def api_ai():
     if request.method == "OPTIONS":
         return '', 200
 
     data = request.get_json()
-    print("Получены данные:", data)  # Лог для отладки
+    print("Получены данные:", data)  # Для отладки
 
     chat_id = data.get("chat_id")
     message = data.get("message", "")
@@ -166,7 +166,6 @@ def stats(message):
     bot.send_message(chat_id, f"Всего сообщений в истории: {count}")
 
 # --- Обработка сообщений с индикатором "печатает" ---
-
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     chat_id = message.chat.id
@@ -188,7 +187,6 @@ def handle_message(message):
     bot.send_message(chat_id, response)
 
 # --- Webhook endpoint ---
-
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
     json_string = request.get_data().decode('utf-8')
