@@ -3,30 +3,30 @@ import psycopg2
 from flask import Flask, request, jsonify
 import telebot
 import g4f
-from flask_cors import CORS  # <-- добавляем
+from flask_cors import CORS
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://your-service.onrender.com
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # https://your-service.onrender.com
 WEBHOOK_URL_PATH = f"/{TOKEN}/"
-DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL для Render
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not TOKEN:
-    raise ValueError("Не найден TELEGRAM_TOKEN в переменных окружения")
+    raise ValueError("Не найден TELEGRAM_TOKEN")
 if not WEBHOOK_URL_BASE:
-    raise ValueError("Не найден WEBHOOK_URL_BASE в переменных окружения")
+    raise ValueError("Не найден WEBHOOK_URL_BASE")
 if not DATABASE_URL:
-    raise ValueError("Не найден DATABASE_URL в переменных окружения")
+    raise ValueError("Не найден DATABASE_URL")
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-CORS(app)  # <-- разрешаем запросы с любых доменов
-# Если хочешь разрешить только GitHub Pages:
-# CORS(app, origins=["https://muvvy.github.io"])
+
+# ✅ Разрешаем только твой GitHub Pages
+CORS(app, resources={r"/*": {"origins": "https://muvvy.github.io"}})
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
 
-# --- Работа с PostgreSQL ---
+# --- PostgreSQL ---
 def get_db_conn():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
@@ -64,24 +64,13 @@ def append_history(chat_id, role, content):
             """, (chat_id, role, content))
             conn.commit()
 
-def reset_history(chat_id):
-    with get_db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM history WHERE chat_id = %s", (chat_id,))
-            conn.commit()
-
-def get_stats(chat_id):
-    with get_db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM history WHERE chat_id = %s", (chat_id,))
-            count = cur.fetchone()[0]
-    return count
-
-init_db()
-
 # --- API для GitHub Pages ---
-@app.route("/chat", methods=["POST"])
+@app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
+    if request.method == "OPTIONS":
+        # ✅ Ответ на preflight
+        return '', 200
+
     data = request.get_json()
     chat_id = data.get("chat_id", 0)
     message = data.get("message", "")
@@ -94,13 +83,13 @@ def chat():
             messages=get_history(chat_id)
         )
     except Exception as e:
-        print(f"Ошибка при вызове g4f: {e}")
-        response = "Извините, произошла ошибка при обработке вашего запроса."
+        print(f"Ошибка g4f: {e}")
+        response = "Ошибка при обработке запроса."
 
     append_history(chat_id, "assistant", response)
     return jsonify({"response": response})
 
-# --- Webhook endpoint для Telegram ---
+# --- Webhook для Telegram ---
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
     json_string = request.get_data().decode('utf-8')
