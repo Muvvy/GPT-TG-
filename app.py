@@ -5,7 +5,7 @@ import telebot
 import g4f
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://your-service.onrender.com
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://gpt-tg-2mop.onrender.com
 WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL для Render
 
@@ -78,17 +78,18 @@ init_db()
 # --- CORS для Web App (например, GitHub Pages) ---
 @app.after_request
 def add_cors_headers(response):
-    # Замени на свой домен!
     response.headers["Access-Control-Allow-Origin"] = "https://muvvy.github.io"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
 # --- Endpoint для Telegram Web App (frontend) ---
-@app.route("/chat", methods=["POST", "OPTIONS"])
-def chat():
+@app.route("/api/ai", methods=["POST", "OPTIONS"])
+def api_ai():
     if request.method == "OPTIONS":
+        # Для preflight-запроса CORS
         return '', 200
+
     data = request.get_json()
     chat_id = data.get("chat_id")
     message = data.get("message", "")
