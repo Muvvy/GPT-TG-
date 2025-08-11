@@ -3,6 +3,7 @@ import psycopg2
 from flask import Flask, request, jsonify
 import telebot
 import g4f
+import threading
 
 # --- Переменные окружения ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -11,8 +12,8 @@ WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Проверка обязательных переменных
-if not TOKEN or not WEBHOOK_URL_BASE or not DATABASE_URL:
-    raise ValueError("Отсутствуют необходимые переменные окружения: TELEGRAM_TOKEN, WEBHOOK_URL_BASE или DATABASE_URL")
+if not TOKEN or not DATABASE_URL:
+    raise ValueError("Отсутствуют необходимые переменные окружения: TELEGRAM_TOKEN или DATABASE_URL")
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -172,6 +173,7 @@ def stats(message):
 def handle_message(message):
     chat_id = message.chat.id
     text = message.text
+    print(f"Получено сообщение от {chat_id}: {text}")  # Логируем входящее сообщение
 
     append_history(chat_id, "user", text)
     bot.send_chat_action(chat_id, 'typing')
@@ -188,27 +190,21 @@ def handle_message(message):
     append_history(chat_id, "assistant", response)
     bot.send_message(chat_id, response)
 
-# --- Webhook endpoint для Telegram ---
+# --- Webhook endpoint оставляем, но не используем для Telegram ---
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
-    try:
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-    except Exception as e:
-        print(f"Ошибка в webhook endpoint: {e}")
-        # Возвращаем 200 чтобы Telegram не отключил webhook, но фиксируй ошибку в логах
+    # Оставляем, чтобы сервер не падал, но бот работает через polling
     return '', 200
 
-if __name__ == "__main__":
-    # Удаляем старый webhook и ставим новый
-    bot.remove_webhook()
-    set_webhook_success = bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
-    if set_webhook_success:
-        print(f"Webhook установлен по адресу: {WEBHOOK_URL_BASE + WEBHOOK_URL_PATH}")
-    else:
-        print("Ошибка установки webhook!")
-
+def run_flask():
     port = int(os.environ.get('PORT', 5000))
-    # Запускаем Flask
     app.run(host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    # Запускаем Flask сервер в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    print("Запуск бота в режиме polling...")
+    bot.remove_webhook()
+    bot.polling(none_stop=True)
