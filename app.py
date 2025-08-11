@@ -6,7 +6,7 @@ import g4f
 from flask_cors import CORS
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # https://your-service.onrender.com
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # https://<твой-backend>.onrender.com
 WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -21,7 +21,7 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 # ✅ Разрешаем только твой GitHub Pages
-CORS(app, resources={r"/*": {"origins": "https://muvvy.github.io"}})
+CORS(app, origins=["https://muvvy.github.io"])
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
@@ -68,8 +68,7 @@ def append_history(chat_id, role, content):
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
-        # ✅ Ответ на preflight
-        return '', 200
+        return '', 200  # preflight ответ
 
     data = request.get_json()
     chat_id = data.get("chat_id", 0)
