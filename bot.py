@@ -1,19 +1,25 @@
 import os
 import psycopg2
+from flask import Flask, request, jsonify
 import telebot
 import g4f
 
+# --- Переменные окружения ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://yourapp.onrender.com
+WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not TOKEN or not DATABASE_URL:
-    raise ValueError("Отсутствуют необходимые переменные окружения: TELEGRAM_TOKEN или DATABASE_URL")
+if not TOKEN or not WEBHOOK_URL_BASE or not DATABASE_URL:
+    raise ValueError("Отсутствуют обязательные переменные окружения: TELEGRAM_TOKEN, WEBHOOK_URL_BASE или DATABASE_URL")
 
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
 
+# --- Работа с базой данных ---
 def get_db_conn():
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
@@ -66,6 +72,47 @@ def get_stats(chat_id):
 
 init_db()
 
+# --- CORS для Web App (если нужно) ---
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "https://muvvy.github.io"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+# --- API для WebApp (по желанию) ---
+@app.route("/api/ai", methods=["POST", "OPTIONS"])
+def api_ai():
+    if request.method == "OPTIONS":
+        return '', 200
+
+    try:
+        data = request.get_json(force=True)
+    except Exception as e:
+        print(f"Ошибка парсинга JSON: {e}")
+        return jsonify({"response": "Неверный формат JSON"}), 400
+
+    chat_id = data.get("chat_id")
+    message = data.get("message", "")
+
+    if not chat_id or not message:
+        return jsonify({"response": "chat_id и message обязательны"}), 400
+
+    append_history(chat_id, "user", message)
+
+    try:
+        response = g4f.ChatCompletion.create(
+            model=DEFAULT_MODEL,
+            messages=get_history(chat_id)
+        )
+    except Exception as e:
+        print(f"Ошибка g4f: {e}")
+        response = "Извините, произошла ошибка при обработке вашего запроса."
+
+    append_history(chat_id, "assistant", response)
+    return jsonify({"response": response})
+
+# --- Telegram bot команды ---
 @bot.message_handler(commands=['start'])
 def start(message):
     chat_id = message.chat.id
@@ -115,11 +162,11 @@ def stats(message):
     count = get_stats(chat_id)
     bot.send_message(chat_id, f"Всего сообщений в истории: {count}")
 
+# --- Обработка всех остальных сообщений ---
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     chat_id = message.chat.id
     text = message.text
-    print(f"Получено сообщение от {chat_id}: {text}")  # Для отладки
 
     append_history(chat_id, "user", text)
     bot.send_chat_action(chat_id, 'typing')
@@ -130,13 +177,27 @@ def handle_message(message):
             messages=get_history(chat_id)
         )
     except Exception as e:
-        print(f"Ошибка при вызове g4f: {e}")
+        print(f"Ошибка g4f: {e}")
         response = "Извините, произошла ошибка при обработке вашего запроса."
 
     append_history(chat_id, "assistant", response)
     bot.send_message(chat_id, response)
 
+# --- Webhook endpoint для Telegram ---
+@app.route(WEBHOOK_URL_PATH, methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return '', 200
+
 if __name__ == "__main__":
-    print("Бот запущен в режиме polling!")
     bot.remove_webhook()
-    bot.polling(none_stop=True)
+    set_webhook_ok = bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
+    if set_webhook_ok:
+        print(f"Webhook установлен по адресу: {WEBHOOK_URL_BASE + WEBHOOK_URL_PATH}")
+    else:
+        print("Ошибка установки webhook!")
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
