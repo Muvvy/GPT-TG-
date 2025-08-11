@@ -1,6 +1,6 @@
 import os
 import psycopg2
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import telebot
 import g4f
 
@@ -74,6 +74,41 @@ def get_stats(chat_id):
     return count
 
 init_db()
+
+# --- CORS для Web App (например, GitHub Pages) ---
+@app.after_request
+def add_cors_headers(response):
+    # Замени на свой домен!
+    response.headers["Access-Control-Allow-Origin"] = "https://muvvy.github.io"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+# --- Endpoint для Telegram Web App (frontend) ---
+@app.route("/chat", methods=["POST", "OPTIONS"])
+def chat():
+    if request.method == "OPTIONS":
+        return '', 200
+    data = request.get_json()
+    chat_id = data.get("chat_id")
+    message = data.get("message", "")
+
+    if not chat_id or not message:
+        return jsonify({"response": "chat_id и message обязательны"}), 400
+
+    append_history(chat_id, "user", message)
+
+    try:
+        response = g4f.ChatCompletion.create(
+            model=DEFAULT_MODEL,
+            messages=get_history(chat_id)
+        )
+    except Exception as e:
+        print(f"Ошибка при вызове g4f: {e}")
+        response = "Извините, произошла ошибка при обработке вашего запроса."
+
+    append_history(chat_id, "assistant", response)
+    return jsonify({"response": response})
 
 # --- Команды бота ---
 
