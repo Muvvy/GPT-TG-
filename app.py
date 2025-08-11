@@ -5,8 +5,9 @@ from flask_cors import CORS
 import telebot
 import g4f
 
+# --- Настройки ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://your-service.onrender.com
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # https://твоё-приложение.onrender.com
 WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL для Render
 
@@ -17,9 +18,10 @@ if not WEBHOOK_URL_BASE:
 if not DATABASE_URL:
     raise ValueError("Не найден DATABASE_URL в переменных окружения")
 
+# --- Инициализация ---
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-CORS(app)  # Разрешаем запросы с GitHub Pages
+CORS(app)  # Разрешить доступ с GitHub Pages
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
@@ -72,8 +74,7 @@ def get_stats(chat_id):
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM history WHERE chat_id = %s", (chat_id,))
-            count = cur.fetchone()[0]
-    return count
+            return cur.fetchone()[0]
 
 init_db()
 
@@ -82,19 +83,11 @@ init_db()
 def start(message):
     chat_id = message.chat.id
     reset_history(chat_id)
-    bot.send_message(chat_id, "Привет! Я бот на базе GPT-4.\n"
-                              "Команды: /help /reset /info /price /stats")
+    bot.send_message(chat_id, "Привет! Я бот на базе GPT-4.\nКоманды: /help /reset /info /price /stats")
 
 @bot.message_handler(commands=['help'])
 def help_cmd(message):
-    chat_id = message.chat.id
-    bot.send_message(chat_id,
-        "/start - начать диалог\n"
-        "/help - список команд\n"
-        "/reset - сбросить историю\n"
-        "/info - о боте\n"
-        "/price - цена\n"
-        "/stats - статистика")
+    bot.send_message(message.chat.id, "/start - начать\n/help - помощь\n/reset - сброс истории\n/info - инфо\n/price - цена\n/stats - статистика")
 
 @bot.message_handler(commands=['reset'])
 def reset(message):
@@ -103,9 +96,7 @@ def reset(message):
 
 @bot.message_handler(commands=['info'])
 def info(message):
-    bot.send_message(message.chat.id,
-        "Я бот на базе GPT. Запоминаю историю. Бесплатный.\n"
-        "Автор: @seregannj")
+    bot.send_message(message.chat.id, "Я бот на базе GPT. Бесплатный.\nАвтор: @seregannj")
 
 @bot.message_handler(commands=['price'])
 def price_cmd(message):
@@ -113,15 +104,13 @@ def price_cmd(message):
 
 @bot.message_handler(commands=['stats'])
 def stats(message):
-    bot.send_message(message.chat.id,
-        f"Всего сообщений: {get_stats(message.chat.id)}")
+    bot.send_message(message.chat.id, f"Всего сообщений: {get_stats(message.chat.id)}")
 
 # --- Обработка сообщений Telegram ---
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     chat_id = message.chat.id
-    text = message.text
-    append_history(chat_id, "user", text)
+    append_history(chat_id, "user", message.text)
     bot.send_chat_action(chat_id, 'typing')
     try:
         response = g4f.ChatCompletion.create(
@@ -139,7 +128,7 @@ def handle_message(message):
 def chat_api():
     data = request.json
     user_message = data.get("message")
-    chat_id = data.get("chat_id", 1)  # Если нет Telegram, можно фиксированный ID
+    chat_id = data.get("chat_id", 1)
     append_history(chat_id, "user", user_message)
     try:
         response = g4f.ChatCompletion.create(
