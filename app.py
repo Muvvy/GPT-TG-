@@ -66,19 +66,11 @@ def api_ai():
     if request.method == "OPTIONS":
         return '', 200
 
-    try:
-        data = request.get_json(force=True)
-    except Exception as e:
-        print(f"Ошибка парсинга JSON: {e}")
-        return jsonify({"response": "Неверный формат JSON"}), 400
-
-    print("Получены данные:", data)
-
+    data = request.get_json(force=True)
     chat_id = data.get("chat_id")
     message = data.get("message", "")
 
     if not chat_id or not message:
-        print("Ошибка: отсутствует chat_id или message")
         return jsonify({"response": "chat_id и message обязательны"}), 400
 
     append_history(chat_id, "user", message)
@@ -89,11 +81,20 @@ def api_ai():
             messages=get_history(chat_id)
         )
     except Exception as e:
-        print(f"Ошибка при вызове g4f: {e}")
-        response = "Извините, произошла ошибка при обработке вашего запроса."
+        print(f"Ошибка g4f: {e}")
+        response = "Ошибка при обработке запроса."
 
     append_history(chat_id, "assistant", response)
     return jsonify({"response": response})
+
+@app.route("/api/clear_history", methods=["POST"])
+def clear_history():
+    data = request.get_json(force=True)
+    chat_id = data.get("chat_id")
+    if not chat_id:
+        return jsonify({"error": "chat_id обязателен"}), 400
+    reset_history(chat_id)
+    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
