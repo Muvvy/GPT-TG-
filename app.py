@@ -3,10 +3,9 @@ import psycopg2
 from flask import Flask, request, jsonify
 import telebot
 import g4f
-from flask_cors import CORS
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # https://<твой-backend>.onrender.com
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")
 WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -19,9 +18,6 @@ if not DATABASE_URL:
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-
-# ✅ Разрешаем только твой GitHub Pages
-CORS(app, origins=["https://muvvy.github.io"])
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
@@ -64,11 +60,19 @@ def append_history(chat_id, role, content):
             """, (chat_id, role, content))
             conn.commit()
 
+# --- Добавляем CORS вручную ---
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "https://muvvy.github.io"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
 # --- API для GitHub Pages ---
 @app.route("/chat", methods=["POST", "OPTIONS"])
 def chat():
     if request.method == "OPTIONS":
-        return '', 200  # preflight ответ
+        return '', 200
 
     data = request.get_json()
     chat_id = data.get("chat_id", 0)
@@ -78,7 +82,7 @@ def chat():
 
     try:
         response = g4f.ChatCompletion.create(
-            model=DEFAULT_MODEL,
+            model="gpt-4",
             messages=get_history(chat_id)
         )
     except Exception as e:
