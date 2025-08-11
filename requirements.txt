@@ -1,5 +1,6 @@
-pyTelegramBotAPI
-g4f
 typing_extensions
 Flask
-psycopg2
+pyTelegramBotAPI
+psycopg2-binary
+g4f
+gunicorn
