@@ -87,14 +87,16 @@ def add_cors_headers(response):
 @app.route("/api/ai", methods=["POST", "OPTIONS"])
 def api_ai():
     if request.method == "OPTIONS":
-        # Для preflight-запроса CORS
         return '', 200
 
     data = request.get_json()
+    print("Получены данные:", data)  # Лог для отладки
+
     chat_id = data.get("chat_id")
     message = data.get("message", "")
 
     if not chat_id or not message:
+        print("Ошибка: отсутствует chat_id или message")
         return jsonify({"response": "chat_id и message обязательны"}), 400
 
     append_history(chat_id, "user", message)
@@ -171,7 +173,7 @@ def handle_message(message):
     text = message.text
 
     append_history(chat_id, "user", text)
-    bot.send_chat_action(chat_id, 'typing')  # Показываем "печатает"
+    bot.send_chat_action(chat_id, 'typing')
 
     try:
         response = g4f.ChatCompletion.create(
