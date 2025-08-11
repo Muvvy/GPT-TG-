@@ -1,13 +1,12 @@
 import os
 import psycopg2
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import telebot
 import g4f
+from flask_cors import CORS  # <-- добавляем
 
-# --- Настройки ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # https://твоё-приложение.onrender.com
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://your-service.onrender.com
 WEBHOOK_URL_PATH = f"/{TOKEN}/"
 DATABASE_URL = os.getenv("DATABASE_URL")  # PostgreSQL URL для Render
 
@@ -18,10 +17,11 @@ if not WEBHOOK_URL_BASE:
 if not DATABASE_URL:
     raise ValueError("Не найден DATABASE_URL в переменных окружения")
 
-# --- Инициализация ---
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-CORS(app)  # Разрешить доступ с GitHub Pages
+CORS(app)  # <-- разрешаем запросы с любых доменов
+# Если хочешь разрешить только GitHub Pages:
+# CORS(app, origins=["https://muvvy.github.io"])
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
@@ -74,80 +74,42 @@ def get_stats(chat_id):
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM history WHERE chat_id = %s", (chat_id,))
-            return cur.fetchone()[0]
+            count = cur.fetchone()[0]
+    return count
 
 init_db()
 
-# --- Telegram команды ---
-@bot.message_handler(commands=['start'])
-def start(message):
-    chat_id = message.chat.id
-    reset_history(chat_id)
-    bot.send_message(chat_id, "Привет! Я бот на базе GPT-4.\nКоманды: /help /reset /info /price /stats")
-
-@bot.message_handler(commands=['help'])
-def help_cmd(message):
-    bot.send_message(message.chat.id, "/start - начать\n/help - помощь\n/reset - сброс истории\n/info - инфо\n/price - цена\n/stats - статистика")
-
-@bot.message_handler(commands=['reset'])
-def reset(message):
-    reset_history(message.chat.id)
-    bot.send_message(message.chat.id, "История сброшена.")
-
-@bot.message_handler(commands=['info'])
-def info(message):
-    bot.send_message(message.chat.id, "Я бот на базе GPT. Бесплатный.\nАвтор: @seregannj")
-
-@bot.message_handler(commands=['price'])
-def price_cmd(message):
-    bot.send_message(message.chat.id, "!!!FREE - БЕСПЛАТНО!!!")
-
-@bot.message_handler(commands=['stats'])
-def stats(message):
-    bot.send_message(message.chat.id, f"Всего сообщений: {get_stats(message.chat.id)}")
-
-# --- Обработка сообщений Telegram ---
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    chat_id = message.chat.id
-    append_history(chat_id, "user", message.text)
-    bot.send_chat_action(chat_id, 'typing')
-    try:
-        response = g4f.ChatCompletion.create(
-            model=DEFAULT_MODEL,
-            messages=get_history(chat_id)
-        )
-    except Exception as e:
-        print(f"Ошибка: {e}")
-        response = "Ошибка обработки запроса."
-    append_history(chat_id, "assistant", response)
-    bot.send_message(chat_id, response)
-
 # --- API для GitHub Pages ---
 @app.route("/chat", methods=["POST"])
-def chat_api():
-    data = request.json
-    user_message = data.get("message")
-    chat_id = data.get("chat_id", 1)
-    append_history(chat_id, "user", user_message)
+def chat():
+    data = request.get_json()
+    chat_id = data.get("chat_id", 0)
+    message = data.get("message", "")
+
+    append_history(chat_id, "user", message)
+
     try:
         response = g4f.ChatCompletion.create(
             model=DEFAULT_MODEL,
             messages=get_history(chat_id)
         )
     except Exception as e:
-        print(f"Ошибка API: {e}")
-        response = "Ошибка обработки запроса."
+        print(f"Ошибка при вызове g4f: {e}")
+        response = "Извините, произошла ошибка при обработке вашего запроса."
+
     append_history(chat_id, "assistant", response)
     return jsonify({"response": response})
 
-# --- Webhook для Telegram ---
+# --- Webhook endpoint для Telegram ---
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
-    update = telebot.types.Update.de_json(request.get_data().decode('utf-8'))
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
     bot.process_new_updates([update])
     return '', 200
 
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host="0.0.0.0", port=port)
