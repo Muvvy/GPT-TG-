@@ -123,7 +123,7 @@ def stats(message):
 def handle_message(message):
     chat_id = message.chat.id
     text = message.text
-    print(f"Получено сообщение от {chat_id}: {text}")  # Для отладки
+    print(f"Получено сообщение от {chat_id}: {text}")
 
     append_history(chat_id, "user", text)
     bot.send_chat_action(chat_id, 'typing')
@@ -139,6 +139,10 @@ def handle_message(message):
 
     append_history(chat_id, "assistant", response)
     bot.send_message(chat_id, response)
+
+@app.route("/")
+def index():
+    return "Бот работает. Webhook установлен."
 
 @app.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
