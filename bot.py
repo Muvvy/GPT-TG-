@@ -1,15 +1,19 @@
 import os
 import psycopg2
+from flask import Flask, request
 import telebot
 import g4f
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
+WEBHOOK_URL_BASE = os.getenv("WEBHOOK_URL_BASE")  # Например: https://yourapp.onrender.com
+WEBHOOK_URL_PATH = f"/{TOKEN}/"
 
-if not TOKEN or not DATABASE_URL:
-    raise ValueError("Отсутствуют необходимые переменные окружения: TELEGRAM_TOKEN или DATABASE_URL")
+if not TOKEN or not DATABASE_URL or not WEBHOOK_URL_BASE:
+    raise ValueError("Отсутствуют необходимые переменные окружения: TELEGRAM_TOKEN, DATABASE_URL или WEBHOOK_URL_BASE")
 
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
 MAX_HISTORY_LENGTH = 20
 DEFAULT_MODEL = "gpt-4"
@@ -136,7 +140,20 @@ def handle_message(message):
     append_history(chat_id, "assistant", response)
     bot.send_message(chat_id, response)
 
+@app.route(WEBHOOK_URL_PATH, methods=['POST'])
+def webhook():
+    json_string = request.get_data().decode('utf-8')
+    update = telebot.types.Update.de_json(json_string)
+    bot.process_new_updates([update])
+    return '', 200
+
 if __name__ == "__main__":
-    print("Бот запущен в режиме polling!")
     bot.remove_webhook()
-    bot.polling(none_stop=True)
+    success = bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH)
+    if success:
+        print(f"Webhook установлен: {WEBHOOK_URL_BASE + WEBHOOK_URL_PATH}")
+    else:
+        print("Ошибка установки webhook!")
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
